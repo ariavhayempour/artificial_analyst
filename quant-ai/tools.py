@@ -178,3 +178,40 @@ def get_options_chain(ticker: str, expiration: str = "next", strike_range_pct: f
         }
     except Exception as e:
         return {"ticker": ticker, "error": str(e)}
+
+
+@cache.memoize(expire=600)
+def get_market_news(ticker: str, days_back: int = 7) -> dict:
+    """Recent Finnhub news headlines plus a sentiment breakdown."""
+    if not os.getenv("FINNHUB_API_KEY"):
+        return {"ticker": ticker, "error": "Finnhub API key not configured"}
+    try:
+        end = datetime.now()
+        start = end - timedelta(days=days_back)
+        news = fh.company_news(
+            ticker,
+            _from=start.strftime("%Y-%m-%d"),
+            to=end.strftime("%Y-%m-%d"),
+        )
+        sent = fh.news_sentiment(ticker)
+        sentiment = sent.get("sentiment", {}) or {}
+
+        top_news = [
+            {
+                "headline": item.get("headline"),
+                "source": item.get("source"),
+                "time": datetime.fromtimestamp(item.get("datetime", 0)).strftime("%m-%d %H:%M"),
+            }
+            for item in news[:8]
+        ]
+
+        return {
+            "ticker": ticker,
+            "sentiment_score": sent.get("companyNewsScore"),
+            "bullish_pct": sentiment.get("bullishPercent"),
+            "bearish_pct": sentiment.get("bearishPercent"),
+            "article_count": len(news),
+            "top_news": top_news,
+        }
+    except Exception as e:
+        return {"ticker": ticker, "error": str(e)}

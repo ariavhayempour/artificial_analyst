@@ -3,7 +3,14 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from tools import analyze_technicals, get_options_chain, get_stock_data
+import re
+
+from tools import (
+    analyze_technicals,
+    get_market_news,
+    get_options_chain,
+    get_stock_data,
+)
 
 
 def _fake_ticker(closes, volumes, info, calendar=None):
@@ -240,3 +247,49 @@ def test_get_options_chain_returns_error_dict_on_exception():
 
     assert result["ticker"] == "BAD"
     assert "opt boom" in result["error"]
+
+
+# ---- get_market_news ------------------------------------------------------
+
+def test_get_market_news_returns_sentiment_and_capped_news():
+    news_items = [
+        {"headline": f"H{i}", "source": f"S{i}", "datetime": 1_700_000_000 + i * 3600}
+        for i in range(12)
+    ]
+    sentiment = {
+        "companyNewsScore": 0.75,
+        "sentiment": {"bullishPercent": 0.7, "bearishPercent": 0.3},
+    }
+
+    with patch("tools.fh.company_news", return_value=news_items) as cn, \
+         patch("tools.fh.news_sentiment", return_value=sentiment):
+        result = get_market_news("aapl", days_back=5)
+
+    assert result["ticker"] == "aapl"
+    assert result["sentiment_score"] == 0.75
+    assert result["bullish_pct"] == 0.7
+    assert result["bearish_pct"] == 0.3
+    assert result["article_count"] == 12          # full count
+    assert len(result["top_news"]) == 8           # capped at 8
+    first = result["top_news"][0]
+    assert set(first.keys()) == {"headline", "source", "time"}
+    assert re.match(r"\d{2}-\d{2} \d{2}:\d{2}", first["time"])
+    # company_news called with the ticker and a date range
+    assert cn.call_args.args[0] == "aapl"
+    assert cn.call_args.kwargs["_from"] and cn.call_args.kwargs["to"]
+
+
+def test_get_market_news_missing_key(monkeypatch):
+    monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+
+    result = get_market_news("AAPL")
+
+    assert result["error"] == "Finnhub API key not configured"
+
+
+def test_get_market_news_returns_error_dict_on_exception():
+    with patch("tools.fh.company_news", side_effect=RuntimeError("api down")):
+        result = get_market_news("AAPL")
+
+    assert result["ticker"] == "AAPL"
+    assert "api down" in result["error"]
