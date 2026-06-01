@@ -15,7 +15,12 @@ export function TradeHistory({ txns }: { txns: Transaction[] }) {
   const [error, setError] = useState<string | null>(null);
 
   if (txns.length === 0) {
-    return <p className="text-slate-400">No trades yet. Add transactions on the Positions tab.</p>;
+    return (
+      <p className="text-sm text-ink-faint">
+        <span className="text-amber">$</span> no trades yet — add transactions on
+        the Positions view.
+      </p>
+    );
   }
 
   function remove(id: string) {
@@ -30,37 +35,45 @@ export function TradeHistory({ txns }: { txns: Transaction[] }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      <div className="overflow-hidden rounded-lg border border-slate-800">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-900/60 text-left text-slate-400">
+      {error && <p className="text-sm text-neg">⚠ {error}</p>}
+      <div className="-mx-4 overflow-x-auto px-4">
+        <table className="grid-table">
+          <thead>
             <tr>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Ticker</th>
-              <th className="px-3 py-2">Side</th>
-              <th className="px-3 py-2 text-right">Qty</th>
-              <th className="px-3 py-2 text-right">Price</th>
-              <th className="px-3 py-2" />
+              <th>Date</th>
+              <th>Ticker</th>
+              <th>Side</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
             {txns.map((t) => (
-              <tr key={t.id} className="border-t border-slate-800">
-                <td className="px-3 py-2">{t.traded_at ?? "—"}</td>
-                <td className="px-3 py-2 font-medium">{t.ticker}</td>
-                <td className="px-3 py-2">{t.side}</td>
-                <td className="px-3 py-2 text-right">{Number(t.quantity)}</td>
-                <td className="px-3 py-2 text-right">{money(t.price_per_share)}</td>
-                <td className="px-3 py-2 text-right">
+              <tr key={t.id}>
+                <td className="!text-left">{t.traded_at ?? "—"}</td>
+                <td className="!text-left font-semibold text-ink">{t.ticker}</td>
+                <td className="!text-left">
+                  <span
+                    className={`inline-flex items-center gap-1 text-[0.7rem] uppercase tracking-wider ${
+                      t.side === "buy" ? "text-pos" : "text-neg"
+                    }`}
+                  >
+                    {t.side === "buy" ? "▲ buy" : "▼ sell"}
+                  </span>
+                </td>
+                <td>{Number(t.quantity)}</td>
+                <td>{money(t.price_per_share)}</td>
+                <td>
                   {t.id && (
                     <button
                       type="button"
                       onClick={() => remove(t.id!)}
                       disabled={pending && deletingId === t.id}
-                      className="rounded-md border border-slate-700 px-2 py-1 text-slate-400 transition hover:bg-slate-800 hover:text-red-400 disabled:opacity-50"
+                      className="btn-term px-2 py-1 hover:!border-neg/50 hover:!text-neg"
                       aria-label={`Delete ${t.side} ${t.ticker}`}
                     >
-                      {pending && deletingId === t.id ? "…" : "🗑"}
+                      {pending && deletingId === t.id ? "…" : "✕"}
                     </button>
                   )}
                 </td>

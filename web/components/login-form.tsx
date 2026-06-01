@@ -3,9 +3,6 @@
 import { useActionState, useState } from "react";
 
 import { signInAction, signUpAction, type AuthState } from "@/app/auth/actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 const EMPTY: AuthState = {};
 
@@ -20,13 +17,16 @@ export function LoginForm() {
   const pending = isSignin ? signingIn : signingUp;
 
   return (
-    <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
-      <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-slate-800/60 p-1 text-sm">
+    <div className="panel p-6">
+      <div className="mb-6 grid grid-cols-2 overflow-hidden rounded-sm border border-line-bright">
         <button
           type="button"
           onClick={() => setMode("signin")}
-          className={`rounded-md py-1.5 font-medium transition ${
-            isSignin ? "bg-slate-700 text-white" : "text-slate-400"
+          data-active={isSignin}
+          className={`py-2 text-xs uppercase tracking-[0.16em] transition-colors ${
+            isSignin
+              ? "bg-amber/10 text-amber"
+              : "text-ink-faint hover:text-ink"
           }`}
         >
           Sign in
@@ -34,8 +34,11 @@ export function LoginForm() {
         <button
           type="button"
           onClick={() => setMode("signup")}
-          className={`rounded-md py-1.5 font-medium transition ${
-            isSignin ? "text-slate-400" : "bg-slate-700 text-white"
+          data-active={!isSignin}
+          className={`border-l border-line py-2 text-xs uppercase tracking-[0.16em] transition-colors ${
+            isSignin
+              ? "text-ink-faint hover:text-ink"
+              : "bg-amber/10 text-amber"
           }`}
         >
           Sign up
@@ -43,32 +46,47 @@ export function LoginForm() {
       </div>
 
       <form action={action} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" autoComplete="email" required />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="password">Password</Label>
-          <Input
+        <label className="flex flex-col gap-1.5">
+          <span className="label">Email</span>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@desk.co"
+            className="input-term"
+            required
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="label">Password</span>
+          <input
             id="password"
             name="password"
             type="password"
             autoComplete={isSignin ? "current-password" : "new-password"}
+            placeholder="••••••••"
+            className="input-term"
             required
           />
-        </div>
+        </label>
 
         {!isSignin && (
-          <p className="text-xs text-slate-500">
-            Sign-up is invite-only — your email must be on the allowlist.
+          <p className="text-[0.7rem] leading-relaxed text-ink-faint">
+            <span className="text-amber">⚠</span> Sign-up is invite-only — your
+            email must be on the allowlist.
           </p>
         )}
-        {state.error && <p className="text-sm text-red-400">{state.error}</p>}
-        {state.message && <p className="text-sm text-emerald-400">{state.message}</p>}
+        {state.error && <p className="text-sm text-neg">⚠ {state.error}</p>}
+        {state.message && <p className="text-sm text-pos">✓ {state.message}</p>}
 
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "…" : isSignin ? "Sign in" : "Create account"}
-        </Button>
+        <button
+          type="submit"
+          disabled={pending}
+          className="btn-term btn-exec mt-1 h-[2.4rem] w-full justify-center text-sm"
+        >
+          {pending ? "authenticating…" : isSignin ? "▸ Access terminal" : "▸ Create account"}
+        </button>
       </form>
     </div>
   );

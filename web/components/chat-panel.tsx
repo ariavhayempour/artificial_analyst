@@ -3,8 +3,6 @@
 import type { UIMessage } from "ai";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   buildTickerPrompt,
   PORTFOLIO_MODES,
@@ -33,7 +31,6 @@ export function ChatPanel({
 }) {
   const [ticker, setTicker] = useState("");
   const [mode, setMode] = useState<TickerMode>("Full breakdown");
-  const [input, setInput] = useState("");
   const busy = status === "submitted" || status === "streaming";
 
   function runTicker() {
@@ -41,101 +38,126 @@ export function ChatPanel({
     if (t) onSend(buildTickerPrompt(mode, t));
   }
 
-  function submitFreeText(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const text = input.trim();
-    if (text) {
-      onSend(text);
-      setInput("");
-    }
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-        <div className="flex flex-wrap items-end gap-2">
-          <Input
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            placeholder="Ticker e.g. NVDA"
-            className="w-36"
-          />
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value as TickerMode)}
-            className="h-9 rounded-md border border-slate-700 bg-slate-800 px-2 text-sm text-slate-200"
-          >
-            {Object.keys(TICKER_MODES).map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <Button type="button" onClick={runTicker} disabled={busy || !ticker.trim()}>
-            ▶ Run
-          </Button>
+    <div className="flex flex-col gap-5">
+      {/* Quick-action console */}
+      <div className="panel">
+        <div className="panel-head">
+          <span className="text-amber">RUN</span>
+          <span className="text-ink-dim">Quick Analysis</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(Object.keys(PORTFOLIO_MODES) as PortfolioMode[]).map((m) => (
+        <div className="flex flex-col gap-3 p-4">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="label">Ticker</span>
+              <input
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                placeholder="NVDA"
+                className="input-term w-36 uppercase"
+                onKeyDown={(e) => e.key === "Enter" && runTicker()}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="label">Mode</span>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as TickerMode)}
+                className="input-term min-w-48"
+              >
+                {Object.keys(TICKER_MODES).map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
-              key={m}
               type="button"
-              onClick={() => onSend(PORTFOLIO_MODES[m])}
-              disabled={busy}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+              onClick={runTicker}
+              disabled={busy || !ticker.trim()}
+              className="btn-term btn-exec h-[2.1rem]"
             >
-              {m}
+              ▶ Run
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={onClear}
-            className="ml-auto rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-400 transition hover:bg-slate-800"
-          >
-            🗑 Clear
-          </button>
+          </div>
+
+          <div className="h-px bg-line" />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="label mr-1">Portfolio</span>
+            {(Object.keys(PORTFOLIO_MODES) as PortfolioMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onSend(PORTFOLIO_MODES[m])}
+                disabled={busy}
+                className="btn-term"
+              >
+                {m}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={onClear}
+              className="btn-term ml-auto"
+              disabled={messages.length === 0}
+            >
+              ✕ Clear
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Transcript */}
       <div className="flex flex-col gap-3">
         {messages.length === 0 && (
-          <p className="text-slate-500">
-            Ask about any stock or options trade, or analyze your portfolio above.
-          </p>
-        )}
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`rounded-lg p-3 ${
-              m.role === "user"
-                ? "self-end bg-slate-700/60"
-                : "bg-slate-900/60 border border-slate-800"
-            }`}
-          >
-            <div className="mb-1 text-xs uppercase tracking-wide text-slate-500">
-              {m.role === "user" ? "You" : "Analyst"}
-            </div>
-            <div className="whitespace-pre-wrap text-sm text-slate-200">
-              {messageText(m) || (busy ? "…" : "")}
-            </div>
+          <div className="rounded-sm border border-dashed border-line bg-panel/40 p-8 text-center">
+            <p className="text-sm text-ink-dim">
+              <span className="text-amber">▸</span> Analyst standing by.
+            </p>
+            <p className="mt-1 text-xs text-ink-faint">
+              Run a quick analysis above, or type a question in the command line
+              below.
+            </p>
           </div>
-        ))}
+        )}
+
+        {messages.map((m) =>
+          m.role === "user" ? (
+            <div
+              key={m.id}
+              className="flex gap-2 px-1 text-sm text-ink-dim"
+            >
+              <span className="shrink-0 text-amber glow-amber">›</span>
+              <span className="whitespace-pre-wrap font-mono">
+                {messageText(m)}
+              </span>
+            </div>
+          ) : (
+            <div
+              key={m.id}
+              className="panel overflow-hidden"
+            >
+              <div className="panel-head">
+                <span className="live-dot !size-1.5" aria-hidden />
+                <span className="text-amber">ANALYST</span>
+              </div>
+              <div className="whitespace-pre-wrap p-4 font-sans text-sm leading-relaxed text-ink">
+                {messageText(m) || (busy ? "▍" : "")}
+              </div>
+            </div>
+          ),
+        )}
+
         {busy && messages.at(-1)?.role === "user" && (
-          <div className="text-sm text-slate-500">Fetching market data &amp; analyzing…</div>
+          <div className="flex items-center gap-2 px-1 text-xs text-ink-faint">
+            <span className="live-dot !size-1.5" aria-hidden />
+            fetching market data &amp; analyzing
+            <span className="caret" aria-hidden />
+          </div>
         )}
       </div>
-
-      <form onSubmit={submitFreeText} className="flex gap-2">
-        <Input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about any stock or options trade…"
-          disabled={busy}
-        />
-        <Button type="submit" disabled={busy || !input.trim()}>
-          Send
-        </Button>
-      </form>
     </div>
   );
 }

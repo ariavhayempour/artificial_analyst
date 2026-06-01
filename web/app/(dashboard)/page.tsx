@@ -10,6 +10,9 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const txns = await listTransactions(supabase);
   const positions = aggregatePositions(txns);
 
@@ -29,6 +32,7 @@ export default async function DashboardPage() {
       totals={totals}
       realized={realizedPnl(txns)}
       history={sortTradeHistory(txns)}
+      userEmail={user?.email ?? ""}
     />
   );
 }
