@@ -16,7 +16,7 @@ import ta.volatility
 import yfinance as yf
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)  # .env is the source of truth, even over stale shell vars
 
 fh = finnhub.Client(api_key=os.getenv("FINNHUB_API_KEY"))
 cache = diskcache.Cache(".cache")

@@ -9,3 +9,4 @@ streamlit>=1.40.0
 python-dotenv>=1.0.0
 requests>=2.32.0
 diskcache>=5.6.0
+supabase>=2.0.0

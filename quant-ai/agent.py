@@ -16,7 +16,7 @@ from tools import (
     get_stock_data,
 )
 
-load_dotenv()
+load_dotenv(override=True)  # .env is the source of truth, even over stale shell vars
 
 client = anthropic.Anthropic()
 
