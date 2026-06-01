@@ -92,7 +92,7 @@ def test_logout_clears_session_and_returns_to_login():
         at.run()
         at.chat_input[0].set_value("hi").run()
         assert at.session_state["messages"]            # populated
-        at.sidebar.button[2].click().run()             # Log out
+        _by_key(at.sidebar.button, "logout_btn").click().run()  # Log out
 
     so.assert_called_once()
     assert "user_id" not in at.session_state
@@ -172,7 +172,7 @@ def test_run_button_sends_mode_prompt_to_agent():
     with patch("agent.run_agent", return_value=("**verdict**", [])) as ra:
         at.run()
         at.sidebar.text_input[0].set_value("nvda")
-        at.sidebar.button[0].click().run()  # Run (mode defaults to Full breakdown)
+        _by_key(at.sidebar.button, "run_btn").click().run()  # Run (mode defaults to Full breakdown)
 
     ra.assert_called_once()
     sent_prompt = ra.call_args.args[0]
@@ -189,7 +189,7 @@ def test_run_button_is_noop_when_ticker_empty():
 
     with patch("agent.run_agent") as ra:
         at.run()
-        at.sidebar.button[0].click().run()  # Run with no ticker
+        _by_key(at.sidebar.button, "run_btn").click().run()  # Run with no ticker
 
     ra.assert_not_called()
     assert at.session_state["messages"] == []
@@ -202,7 +202,7 @@ def test_clear_button_resets_chat_and_history():
         at.run()
         at.chat_input[0].set_value("hi").run()
         assert at.session_state["messages"]  # populated
-        at.sidebar.button[1].click().run()    # Clear
+        _by_key(at.sidebar.button, "clear_btn").click().run()    # Clear
 
     assert at.session_state["messages"] == []
     assert at.session_state["history"] == []
@@ -298,3 +298,33 @@ def test_realized_tab_empty_state_when_no_trades():
 
     assert not at.exception
     assert any("No trades yet" in i.value for i in at.info)
+
+
+# ---- portfolio-aware chat modes -------------------------------------------
+
+def test_portfolio_mode_sends_ticker_free_prompt_with_user_id():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[]), \
+         patch("agent.run_agent", return_value=("ok", [])) as ra:
+        at.run()
+        _by_key(at.sidebar.button, "pf_book").click().run()
+
+    ra.assert_called_once()
+    prompt, _history, user_id = ra.call_args.args
+    assert "portfolio" in prompt.lower()
+    assert user_id == "u-test"
+
+
+def test_analyze_holding_button_sends_per_ticker_prompt():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[_buy()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "price": 120.0}), \
+         patch("agent.run_agent", return_value=("ok", [])) as ra:
+        at.run()
+        _by_key(at.button, "analyze_NVDA").click().run()
+
+    ra.assert_called_once()
+    prompt = ra.call_args.args[0]
+    assert "NVDA" in prompt

@@ -143,27 +143,54 @@ PROMPTS = {
         "Is {t} cheap or expensive relative to the group? Which would you buy?",
 }
 
+PORTFOLIO_PROMPTS = {
+    "pf_book":
+        "Fetch my current portfolio and give me a full health check: total value, "
+        "unrealized P&L, and your read on each position. Flag anything overextended and "
+        "give concrete hold / trim / add guidance with specific levels.",
+    "pf_risk":
+        "Fetch my portfolio and identify my single biggest risk right now. Assess "
+        "concentration (position weights), correlation across holdings, stretched "
+        "technicals, and any upcoming earnings. What would you de-risk first, and how?",
+    "pf_trim":
+        "Fetch my portfolio and tell me specifically what to trim and what to add. For "
+        "each call give a reason, a target weight, and entry/exit levels.",
+}
+
+
+def _ask(prompt: str):
+    """Queue a user message; the chat tab answers any trailing user message."""
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.rerun()
+
+
 # --- sidebar: quick analysis ----------------------------------------------
 with st.sidebar:
     st.header("Quick analysis")
     ticker = st.text_input("Ticker", placeholder="e.g. NVDA").upper().strip()
     mode = st.selectbox("Analysis type", list(PROMPTS.keys()))
 
-    if st.button("▶  Run", use_container_width=True):
+    if st.button("▶  Run", key="run_btn", use_container_width=True):
         if ticker:
-            st.session_state.messages.append(
-                {"role": "user", "content": PROMPTS[mode].format(t=ticker)}
-            )
-            st.rerun()
+            _ask(PROMPTS[mode].format(t=ticker))
+
+    st.divider()
+    st.header("My portfolio")
+    if st.button("📊  Analyze my whole book", key="pf_book", use_container_width=True):
+        _ask(PORTFOLIO_PROMPTS["pf_book"])
+    if st.button("⚠️  Biggest risk / concentration", key="pf_risk", use_container_width=True):
+        _ask(PORTFOLIO_PROMPTS["pf_risk"])
+    if st.button("✂️  What to trim or add", key="pf_trim", use_container_width=True):
+        _ask(PORTFOLIO_PROMPTS["pf_trim"])
 
     st.divider()
 
-    if st.button("🗑  Clear chat", use_container_width=True):
+    if st.button("🗑  Clear chat", key="clear_btn", use_container_width=True):
         st.session_state.messages = []
         st.session_state.history = []
         st.rerun()
 
-    if st.button("🔒  Log out", use_container_width=True):
+    if st.button("🔒  Log out", key="logout_btn", use_container_width=True):
         db.sign_out(st.session_state.get("sb"))
         for key in ("user_id", "sb", "messages", "history"):
             st.session_state.pop(key, None)
@@ -243,6 +270,16 @@ def render_positions(sb):
             }
         )
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    st.caption("Ask the analyst about a holding:")
+    analyze_cols = st.columns(max(len(positions), 1))
+    for col, p in zip(analyze_cols, positions):
+        if col.button(f"🔍 {p['ticker']}", key=f"analyze_{p['ticker']}", use_container_width=True):
+            _ask(
+                f"I hold {p['ticker']} in my portfolio. Fetch my portfolio plus current "
+                f"data on {p['ticker']} and tell me whether to hold, add, or trim — with "
+                f"specific entry/target/stop levels and how it fits my overall book."
+            )
 
     for p in positions:
         with st.expander(f"{p['ticker']} — {len(p['batches'])} purchase batch(es)"):
