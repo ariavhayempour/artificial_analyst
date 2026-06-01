@@ -140,3 +140,41 @@ def analyze_technicals(ticker: str, indicators: list = None) -> dict:
         return result
     except Exception as e:
         return {"ticker": ticker, "error": str(e)}
+
+
+_OPTION_COLUMNS = ["strike", "lastPrice", "bid", "ask", "volume", "openInterest", "impliedVolatility"]
+
+
+@cache.memoize(expire=120)
+def get_options_chain(ticker: str, expiration: str = "next", strike_range_pct: float = 0.10) -> dict:
+    """Calls and puts within a strike band around the current price."""
+    try:
+        stk = yf.Ticker(ticker)
+        price = stk.info.get("currentPrice")
+        if not price:
+            price = stk.history(period="1d")["Close"].iloc[-1]
+
+        dates = stk.options
+        if not dates:
+            return {"ticker": ticker, "error": "No options data available"}
+
+        exp_date = dates[0] if expiration == "next" else expiration
+        chain = stk.option_chain(exp_date)
+
+        lo = price * (1 - strike_range_pct)
+        hi = price * (1 + strike_range_pct)
+
+        def _band(df):
+            within = df[(df["strike"] >= lo) & (df["strike"] <= hi)]
+            return within[_OPTION_COLUMNS].to_dict("records")
+
+        return {
+            "ticker": ticker,
+            "current_price": round(float(price), 2),
+            "expiration": exp_date,
+            "available_expirations": list(dates[:5]),
+            "calls": _band(chain.calls),
+            "puts": _band(chain.puts),
+        }
+    except Exception as e:
+        return {"ticker": ticker, "error": str(e)}

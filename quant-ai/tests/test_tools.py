@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from tools import analyze_technicals, get_stock_data
+from tools import analyze_technicals, get_options_chain, get_stock_data
 
 
 def _fake_ticker(closes, volumes, info, calendar=None):
@@ -18,6 +18,36 @@ def _fake_close_ticker(closes):
     fake = MagicMock()
     fake.history.return_value = pd.DataFrame({"Close": closes})
     return fake
+
+
+def _options_df(strikes):
+    n = len(strikes)
+    return pd.DataFrame({
+        "contractSymbol": [f"X{int(s)}C" for s in strikes],  # extra col -> must be dropped
+        "strike": strikes,
+        "lastPrice": [1.0] * n,
+        "bid": [0.9] * n,
+        "ask": [1.1] * n,
+        "volume": [10] * n,
+        "openInterest": [100] * n,
+        "impliedVolatility": [0.5] * n,
+    })
+
+
+def _fake_options_ticker(price, dates, calls_strikes, puts_strikes, has_current=True):
+    fake = MagicMock()
+    fake.info = {"currentPrice": price if has_current else None}
+    fake.history.return_value = pd.DataFrame({"Close": [price]})
+    fake.options = dates
+    chain = MagicMock()
+    chain.calls = _options_df(calls_strikes)
+    chain.puts = _options_df(puts_strikes)
+    fake.option_chain.return_value = chain
+    return fake
+
+
+_OPT_COLS = {"strike", "lastPrice", "bid", "ask", "volume", "openInterest", "impliedVolatility"}
+_DATES = [f"2026-06-{d:02d}" for d in (5, 12, 19, 26, 30)] + ["2026-07-17"]  # 6 dates
 
 
 # ---- get_stock_data -------------------------------------------------------
@@ -148,3 +178,65 @@ def test_analyze_technicals_returns_error_dict_on_exception():
 
     assert result["ticker"] == "BAD"
     assert "boom" in result["error"]
+
+
+# ---- get_options_chain ----------------------------------------------------
+
+def test_get_options_chain_filters_strikes_and_columns():
+    # price 100, +/-10% -> keep strikes in [90, 110]
+    fake = _fake_options_ticker(
+        100.0, _DATES,
+        calls_strikes=[85.0, 95.0, 100.0, 105.0, 115.0],
+        puts_strikes=[88.0, 92.0, 100.0, 108.0, 112.0],
+    )
+
+    with patch("tools.yf.Ticker", return_value=fake):
+        result = get_options_chain("aapl")
+
+    assert result["ticker"] == "aapl"
+    assert result["current_price"] == 100.0
+    assert result["expiration"] == _DATES[0]               # "next"
+    assert result["available_expirations"] == _DATES[:5]   # first 5 only
+    fake.option_chain.assert_called_once_with(_DATES[0])
+
+    call_strikes = [c["strike"] for c in result["calls"]]
+    assert call_strikes == [95.0, 100.0, 105.0]
+    assert [p["strike"] for p in result["puts"]] == [92.0, 100.0, 108.0]
+    # only the 7 contract columns are returned
+    assert set(result["calls"][0].keys()) == _OPT_COLS
+
+
+def test_get_options_chain_uses_explicit_expiration():
+    fake = _fake_options_ticker(100.0, _DATES, [100.0], [100.0])
+
+    with patch("tools.yf.Ticker", return_value=fake):
+        result = get_options_chain("MSFT", expiration="2026-06-26")
+
+    assert result["expiration"] == "2026-06-26"
+    fake.option_chain.assert_called_once_with("2026-06-26")
+
+
+def test_get_options_chain_falls_back_to_last_close_for_price():
+    fake = _fake_options_ticker(100.0, _DATES, [100.0], [100.0], has_current=False)
+
+    with patch("tools.yf.Ticker", return_value=fake):
+        result = get_options_chain("NVDA")
+
+    assert result["current_price"] == 100.0
+
+
+def test_get_options_chain_errors_when_no_options():
+    fake = _fake_options_ticker(100.0, [], [], [])
+
+    with patch("tools.yf.Ticker", return_value=fake):
+        result = get_options_chain("BRK-A")
+
+    assert result["error"] == "No options data available"
+
+
+def test_get_options_chain_returns_error_dict_on_exception():
+    with patch("tools.yf.Ticker", side_effect=RuntimeError("opt boom")):
+        result = get_options_chain("BAD")
+
+    assert result["ticker"] == "BAD"
+    assert "opt boom" in result["error"]
