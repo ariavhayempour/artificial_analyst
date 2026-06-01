@@ -13,6 +13,7 @@ const EPS = 1e-9;
 
 /** A ledger row. Numerics may arrive as strings from PostgREST — coerced below. */
 export interface Transaction {
+  id?: string;
   ticker: string;
   side: "buy" | "sell";
   quantity: number | string;
@@ -152,6 +153,22 @@ export function aggregatePositions(txns: Transaction[]): Position[] {
   }
   positions.sort((a, b) => (a.ticker < b.ticker ? -1 : a.ticker > b.ticker ? 1 : 0));
   return positions;
+}
+
+/**
+ * Transactions newest-first for the trade-history view (trade date, then
+ * created_at). Pure — returns a new array, leaving the input untouched.
+ */
+export function sortTradeHistory(txns: Transaction[]): Transaction[] {
+  return [...txns].sort((a, b) => {
+    const ka = [String(a.traded_at ?? ""), String(a.created_at ?? "")];
+    const kb = [String(b.traded_at ?? ""), String(b.created_at ?? "")];
+    for (let j = 0; j < ka.length; j++) {
+      if (ka[j] < kb[j]) return 1; // descending
+      if (ka[j] > kb[j]) return -1;
+    }
+    return 0;
+  });
 }
 
 /** Realized gain/loss per sell (average-cost basis) plus the grand total. */

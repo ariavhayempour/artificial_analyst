@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { aggregatePositions, realizedPnl, type Transaction } from "./portfolio";
+import {
+  aggregatePositions,
+  realizedPnl,
+  sortTradeHistory,
+  type Transaction,
+} from "./portfolio";
 
 // Mirrors tests/test_portfolio.py — pins the average-cost math for parity with
 // the Python reference implementation.
@@ -108,5 +113,33 @@ describe("realizedPnl", () => {
       sales: [],
       total: 0,
     });
+  });
+});
+
+describe("sortTradeHistory", () => {
+  it("orders transactions newest first by trade date", () => {
+    const out = sortTradeHistory([
+      txn("AAPL", "buy", 1, 1, "2026-01-01"),
+      txn("NVDA", "buy", 1, 1, "2026-03-01"),
+      txn("TSLA", "buy", 1, 1, "2026-02-01"),
+    ]);
+    expect(out.map((t) => t.ticker)).toEqual(["NVDA", "TSLA", "AAPL"]);
+  });
+
+  it("breaks ties on trade date by created_at, newest first", () => {
+    const out = sortTradeHistory([
+      { ticker: "A", side: "buy", quantity: 1, price_per_share: 1, traded_at: "2026-01-01", created_at: "2026-01-01T09:00:00Z" },
+      { ticker: "B", side: "buy", quantity: 1, price_per_share: 1, traded_at: "2026-01-01", created_at: "2026-01-01T10:00:00Z" },
+    ]);
+    expect(out.map((t) => t.ticker)).toEqual(["B", "A"]);
+  });
+
+  it("does not mutate the input array", () => {
+    const input = [
+      txn("AAPL", "buy", 1, 1, "2026-01-01"),
+      txn("NVDA", "buy", 1, 1, "2026-03-01"),
+    ];
+    sortTradeHistory(input);
+    expect(input.map((t) => t.ticker)).toEqual(["AAPL", "NVDA"]);
   });
 });
