@@ -71,3 +71,72 @@ def get_stock_data(ticker: str, period: str = "3mo", include_fundamentals: bool 
         return result
     except Exception as e:
         return {"ticker": ticker, "error": str(e)}
+
+
+@cache.memoize(expire=300)
+def analyze_technicals(ticker: str, indicators: list = None) -> dict:
+    """Compute technical indicators from 6 months of daily closes."""
+    if indicators is None:
+        indicators = ["rsi", "macd", "bollinger", "sma", "support_resistance"]
+    try:
+        close = yf.Ticker(ticker).history(period="6mo")["Close"]
+        if close.empty:
+            return {"ticker": ticker, "error": "No data found — verify ticker symbol"}
+
+        result = {"ticker": ticker, "price": round(float(close.iloc[-1]), 2)}
+
+        if "rsi" in indicators:
+            rsi = ta.momentum.RSIIndicator(close, window=14).rsi().iloc[-1]
+            result["rsi_14"] = round(float(rsi), 1)
+            result["rsi_signal"] = (
+                "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral"
+            )
+
+        if "macd" in indicators:
+            macd = ta.trend.MACD(close)
+            hist = macd.macd_diff().iloc[-1]
+            result["macd"] = round(float(macd.macd().iloc[-1]), 4)
+            result["macd_signal"] = round(float(macd.macd_signal().iloc[-1]), 4)
+            result["macd_histogram"] = round(float(hist), 4)
+            result["macd_trend"] = (
+                "Bullish crossover" if hist > 0 else "Bearish crossover"
+            )
+
+        if "bollinger" in indicators:
+            bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
+            pct_b = bb.bollinger_pband().iloc[-1]
+            result["bb_upper"] = round(float(bb.bollinger_hband().iloc[-1]), 2)
+            result["bb_mid"] = round(float(bb.bollinger_mavg().iloc[-1]), 2)
+            result["bb_lower"] = round(float(bb.bollinger_lband().iloc[-1]), 2)
+            result["bb_pct_b"] = round(float(pct_b), 2)
+            result["bb_position"] = (
+                "Near upper band" if pct_b > 0.8
+                else "Near lower band" if pct_b < 0.2
+                else "Mid-range"
+            )
+
+        if "sma" in indicators:
+            sma_20 = close.rolling(20).mean().iloc[-1]
+            sma_50 = close.rolling(50).mean().iloc[-1]
+            sma_200 = close.rolling(200).mean().iloc[-1]
+            result["sma_20"] = round(float(sma_20), 2)
+            result["sma_50"] = round(float(sma_50), 2)
+            result["sma_200"] = round(float(sma_200), 2)
+            result["above_200sma"] = bool(close.iloc[-1] > sma_200)
+            result["golden_cross"] = bool(sma_50 > sma_200)
+
+        if "support_resistance" in indicators:
+            last60 = close.iloc[-60:]
+            price = close.iloc[-1]
+            support = round(float(last60.min()), 2)
+            resistance = round(float(last60.max()), 2)
+            result["support"] = support
+            result["resistance"] = resistance
+            result["pct_from_support"] = round((price - support) / support * 100, 1)
+            result["pct_from_resistance"] = round(
+                (resistance - price) / resistance * 100, 1
+            )
+
+        return result
+    except Exception as e:
+        return {"ticker": ticker, "error": str(e)}
