@@ -27,3 +27,61 @@ def get_client() -> Client:
             "(copy .env.example to .env and fill in your Supabase project values)."
         )
     return create_client(url, key)
+
+
+_NOT_AUTHORIZED = (
+    "This email is not authorized to sign up. "
+    "Ask an admin to add you to the allowlist."
+)
+
+
+def _friendly_auth_error(exc: Exception) -> str:
+    """Map raw Supabase auth errors to a user-facing message.
+
+    The invite-only allowlist is enforced by a database trigger; when it blocks a
+    sign-up the failure surfaces here, so we translate it into a clear hint.
+    """
+    msg = str(exc)
+    low = msg.lower()
+    if (
+        "not authorized" in low
+        or "allowlist" in low
+        or "database error saving new user" in low
+    ):
+        return _NOT_AUTHORIZED
+    return msg or "Authentication failed."
+
+
+def sign_in(client, email: str, password: str) -> dict:
+    """Sign in with email/password. Returns ``{"user_id": ...}`` or ``{"error": ...}``."""
+    try:
+        resp = client.auth.sign_in_with_password(
+            {"email": email, "password": password}
+        )
+    except Exception as e:
+        return {"error": _friendly_auth_error(e)}
+    if not getattr(resp, "user", None):
+        return {"error": "Invalid email or password."}
+    return {"user_id": resp.user.id}
+
+
+def sign_up(client, email: str, password: str) -> dict:
+    """Register a new user. Non-allowlisted emails are rejected by the DB trigger.
+
+    Returns ``{"user_id": ...}`` on success or ``{"error": ...}`` (error-as-data).
+    """
+    try:
+        resp = client.auth.sign_up({"email": email, "password": password})
+    except Exception as e:
+        return {"error": _friendly_auth_error(e)}
+    if not getattr(resp, "user", None):
+        return {"error": "Sign-up failed — please try again."}
+    return {"user_id": resp.user.id}
+
+
+def sign_out(client) -> None:
+    """Best-effort sign-out; never raises (logging out should always 'work')."""
+    try:
+        client.auth.sign_out()
+    except Exception:
+        pass

@@ -82,5 +82,9 @@ create trigger enforce_allowlist_before_insert
     before insert on auth.users
     for each row execute function public.enforce_allowlist();
 
+-- enforce_allowlist() is trigger-only — don't expose it via the PostgREST RPC
+-- endpoint. Triggers still fire regardless of these EXECUTE grants.
+revoke execute on function public.enforce_allowlist() from public, anon, authenticated;
+
 -- Seed your authorized users here, e.g.:
---   insert into public.allowlist (email) values ('admin@jsapartners.co');
+--   insert into public.allowlist (email) values ('ariavhayempour@gmail.com');
