@@ -13,6 +13,22 @@ def _authed(at):
     return at
 
 
+def _by_key(widgets, key):
+    """Find a widget by its key (labels can collide across tabs/sidebar)."""
+    return next(w for w in widgets if w.key == key)
+
+
+def _buy(ticker="NVDA", qty=10, price=100.0, traded_at="2026-01-01"):
+    return {
+        "id": "t1",
+        "ticker": ticker,
+        "side": "buy",
+        "quantity": qty,
+        "price_per_share": price,
+        "traded_at": traded_at,
+    }
+
+
 # ---- auth gate ------------------------------------------------------------
 
 def test_unauthenticated_user_sees_login_not_dashboard():
@@ -179,3 +195,59 @@ def test_clear_button_resets_chat_and_history():
 
     assert at.session_state["messages"] == []
     assert at.session_state["history"] == []
+
+
+# ---- positions dashboard --------------------------------------------------
+
+def test_add_transaction_form_submits_to_db():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[]), \
+         patch("db.add_transaction", return_value={"data": [{"id": "t1"}]}) as add:
+        at.run()
+        _by_key(at.text_input, "tx_ticker").set_value("nvda")
+        _by_key(at.number_input, "tx_qty").set_value(10.0)
+        _by_key(at.number_input, "tx_price").set_value(100.0)
+        _by_key(at.button, "add_tx").click().run()
+
+    add.assert_called_once()
+    _sb, ticker, side, qty, price, _date = add.call_args.args
+    assert (ticker, side, qty, price) == ("nvda", "buy", 10.0, 100.0)
+
+
+def test_positions_tab_shows_live_pnl_and_totals():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[_buy()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "price": 120.0}) as gsd:
+        at.run()
+
+    gsd.assert_called()  # live price was fetched for the held ticker
+    metrics = " ".join(m.value for m in at.metric)
+    assert "1,200.00" in metrics   # 10 shares * $120 market value
+    assert "200.00" in metrics     # unrealized P&L = 1200 - 1000
+    holdings = at.dataframe[0].value
+    assert "NVDA" in list(holdings["Ticker"])
+
+
+def test_positions_tab_degrades_gracefully_on_price_failure():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[_buy()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "error": "rate limited"}):
+        at.run()
+
+    assert not at.exception          # no crash when the quote is unavailable
+    holdings = at.dataframe[0].value
+    assert "NVDA" in list(holdings["Ticker"])
+    assert "—" in list(holdings["Price"])  # price shown as a placeholder
+
+
+def test_positions_tab_empty_state_when_no_holdings():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[]):
+        at.run()
+
+    assert not at.exception
+    assert any("No open positions" in i.value for i in at.info)

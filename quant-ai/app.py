@@ -10,15 +10,18 @@
 """Streamlit UI for the Quant AI trading terminal.
 
 Access is gated by Supabase email/password auth behind an invite-only allowlist.
-Once signed in, the dark-themed chat surface and sidebar quick-analysis modes are
-shown. Both the sidebar Run button and the free-text chat input simply append a
-user message; a single response step then answers any trailing, unanswered user
-message — so the two entry points share one code path.
+Once signed in, a Schwab-style dashboard is shown across three tabs: Positions
+(holdings with live P&L + an add-transaction form), Realized, and Chat (the
+portfolio-aware agent). Both the sidebar Run button and the chat input append a
+user message; a single response step answers any trailing, unanswered message.
 """
+import pandas as pd
 import streamlit as st
 
 import db
+import portfolio
 from agent import run_agent
+from tools import get_stock_data
 
 st.set_page_config(
     page_title="Quant AI",
@@ -59,7 +62,7 @@ st.markdown(
 # --- authentication gate ---------------------------------------------------
 # Until a user is signed in, show ONLY the login / signup form. The signed-in
 # user_id and the authed Supabase client (carrying the user JWT, for RLS-scoped
-# data ops in later tasks) live in session state.
+# data ops) live in session state.
 if "user_id" not in st.session_state:
     st.title("📈 Quant AI")
     st.caption("Sign in to your trading terminal")
@@ -106,6 +109,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []      # display list: {role, content}
 if "history" not in st.session_state:
     st.session_state.history = []       # agent conversation history
+
+SB = st.session_state["sb"] if "sb" in st.session_state else None
 
 # --- header ----------------------------------------------------------------
 st.title("📈 Quant AI")
@@ -164,31 +169,120 @@ with st.sidebar:
             st.session_state.pop(key, None)
         st.rerun()
 
-# --- chat history ----------------------------------------------------------
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
 
-# --- free-text input -------------------------------------------------------
-if prompt := st.chat_input("Ask about any stock or options trade..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+def _live_price(ticker: str):
+    """Current price for a ticker, or None if the data fetch failed."""
+    data = get_stock_data(ticker)
+    if isinstance(data, dict) and "error" not in data and data.get("price") is not None:
+        return float(data["price"])
+    return None
 
-# --- answer any trailing, unanswered user message --------------------------
-# Shared by both the Run button and the chat input: if the last message is from
-# the user and has no assistant reply yet, run the agent now.
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-    pending = st.session_state.messages[-1]["content"]
-    with st.chat_message("assistant"):
-        try:
-            with st.spinner("Fetching market data & analyzing..."):
-                response_text, st.session_state.history = run_agent(
-                    pending, st.session_state.history
-                )
-            st.markdown(response_text)
-            st.session_state.messages.append(
-                {"role": "assistant", "content": response_text}
+
+def render_positions(sb):
+    # --- add transaction ---------------------------------------------------
+    st.subheader("Add transaction")
+    cols = st.columns([2, 1, 1, 1, 2])
+    cols[0].text_input("Ticker", key="tx_ticker", placeholder="e.g. NVDA")
+    cols[1].selectbox("Side", ["buy", "sell"], key="tx_side")
+    cols[2].number_input("Quantity", min_value=0.0, step=1.0, key="tx_qty")
+    cols[3].number_input("Price / share", min_value=0.0, step=1.0, key="tx_price")
+    cols[4].date_input("Trade date", key="tx_date")
+
+    if st.button("➕  Add transaction", key="add_tx"):
+        res = db.add_transaction(
+            sb,
+            st.session_state.tx_ticker,
+            st.session_state.tx_side,
+            st.session_state.tx_qty,
+            st.session_state.tx_price,
+            str(st.session_state.tx_date),
+        )
+        if "error" in res:
+            st.error(res["error"])
+        else:
+            st.success(
+                f"Added {st.session_state.tx_side} "
+                f"{st.session_state.tx_qty} {st.session_state.tx_ticker.upper().strip()}"
             )
-        except Exception as e:
-            st.error(f"Analysis failed: {e}")
+            st.rerun()
+
+    # --- holdings ----------------------------------------------------------
+    st.subheader("Holdings")
+    positions = portfolio.aggregate_positions(db.list_transactions(sb))
+    if not positions:
+        st.info("No open positions yet. Add a buy above to start tracking your book.")
+        return
+
+    priced = [(p, _live_price(p["ticker"])) for p in positions]
+    total_value = sum(price * p["quantity"] for p, price in priced if price is not None)
+    total_cost_priced = sum(p["cost_basis"] for p, price in priced if price is not None)
+    total_unreal = total_value - total_cost_priced
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Portfolio value", f"${total_value:,.2f}")
+    c2.metric("Cost basis", f"${total_cost_priced:,.2f}")
+    c3.metric("Unrealized P&L", f"${total_unreal:,.2f}")
+
+    rows = []
+    for p, price in priced:
+        mkt = price * p["quantity"] if price is not None else None
+        unreal = mkt - p["cost_basis"] if mkt is not None else None
+        rows.append(
+            {
+                "Ticker": p["ticker"],
+                "Qty": p["quantity"],
+                "Avg cost": p["avg_cost"],
+                "Price": price if price is not None else "—",
+                "Mkt value": round(mkt, 2) if mkt is not None else "—",
+                "Cost basis": p["cost_basis"],
+                "Unreal $": round(unreal, 2) if unreal is not None else "—",
+                "Unreal %": round(unreal / p["cost_basis"] * 100, 2)
+                if (unreal is not None and p["cost_basis"]) else "—",
+                "Weight %": round(mkt / total_value * 100, 1)
+                if (mkt is not None and total_value) else "—",
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    for p in positions:
+        with st.expander(f"{p['ticker']} — {len(p['batches'])} purchase batch(es)"):
+            st.dataframe(pd.DataFrame(p["batches"]), hide_index=True, use_container_width=True)
+
+
+def render_chat():
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if prompt := st.chat_input("Ask about any stock or options trade..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+    # Answer any trailing, unanswered user message (shared by Run + chat input).
+    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+        pending = st.session_state.messages[-1]["content"]
+        with st.chat_message("assistant"):
+            try:
+                with st.spinner("Fetching market data & analyzing..."):
+                    response_text, st.session_state.history = run_agent(
+                        pending, st.session_state.history
+                    )
+                st.markdown(response_text)
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": response_text}
+                )
+            except Exception as e:
+                st.error(f"Analysis failed: {e}")
+
+
+tab_positions, tab_realized, tab_chat = st.tabs(["📊 Positions", "💰 Realized", "💬 Chat"])
+
+with tab_positions:
+    render_positions(SB)
+
+with tab_realized:
+    st.info("Realized gains & trade history — added in the next step.")
+
+with tab_chat:
+    render_chat()
