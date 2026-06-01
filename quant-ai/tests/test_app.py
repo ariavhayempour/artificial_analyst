@@ -49,3 +49,66 @@ def test_chat_input_shows_friendly_error_on_agent_failure():
 
     assert not at.exception  # never crashes to a white screen
     assert any("kaboom" in e.value for e in at.error)
+
+
+# ---- Task 9: theming + sidebar quick-analysis -----------------------------
+
+EXPECTED_MODES = [
+    "Full breakdown",
+    "Best options play right now",
+    "Technical analysis only",
+    "Earnings setup & IV risk",
+    "Compare to closest peers",
+]
+
+
+def test_dark_theme_css_injected():
+    at = AppTest.from_file(APP).run()
+    assert any("#0a0f1e" in md.value for md in at.markdown)
+
+
+def test_sidebar_offers_the_five_analysis_modes():
+    at = AppTest.from_file(APP).run()
+    assert at.sidebar.selectbox[0].options == EXPECTED_MODES
+
+
+def test_run_button_sends_mode_prompt_to_agent():
+    at = AppTest.from_file(APP)
+
+    with patch("agent.run_agent", return_value=("**verdict**", [])) as ra:
+        at.run()
+        at.sidebar.text_input[0].set_value("nvda")
+        at.sidebar.button[0].click().run()  # Run (mode defaults to Full breakdown)
+
+    ra.assert_called_once()
+    sent_prompt = ra.call_args.args[0]
+    assert "NVDA" in sent_prompt                       # ticker uppercased into prompt
+    assert "complete analysis of NVDA" in sent_prompt  # the Full breakdown template
+    assert any(
+        m["role"] == "assistant" and "verdict" in m["content"]
+        for m in at.session_state["messages"]
+    )
+
+
+def test_run_button_is_noop_when_ticker_empty():
+    at = AppTest.from_file(APP)
+
+    with patch("agent.run_agent") as ra:
+        at.run()
+        at.sidebar.button[0].click().run()  # Run with no ticker
+
+    ra.assert_not_called()
+    assert at.session_state["messages"] == []
+
+
+def test_clear_button_resets_chat_and_history():
+    at = AppTest.from_file(APP)
+
+    with patch("agent.run_agent", return_value=("resp", [{"role": "assistant", "content": "ctx"}])):
+        at.run()
+        at.chat_input[0].set_value("hi").run()
+        assert at.session_state["messages"]  # populated
+        at.sidebar.button[1].click().run()    # Clear
+
+    assert at.session_state["messages"] == []
+    assert at.session_state["history"] == []
