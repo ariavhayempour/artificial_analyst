@@ -18,11 +18,22 @@ def _by_key(widgets, key):
     return next(w for w in widgets if w.key == key)
 
 
-def _buy(ticker="NVDA", qty=10, price=100.0, traded_at="2026-01-01"):
+def _buy(ticker="NVDA", qty=10, price=100.0, traded_at="2026-01-01", id="t1"):
     return {
-        "id": "t1",
+        "id": id,
         "ticker": ticker,
         "side": "buy",
+        "quantity": qty,
+        "price_per_share": price,
+        "traded_at": traded_at,
+    }
+
+
+def _sell(ticker="NVDA", qty=4, price=130.0, traded_at="2026-02-01", id="t2"):
+    return {
+        "id": id,
+        "ticker": ticker,
+        "side": "sell",
         "quantity": qty,
         "price_per_share": price,
         "traded_at": traded_at,
@@ -251,3 +262,39 @@ def test_positions_tab_empty_state_when_no_holdings():
 
     assert not at.exception
     assert any("No open positions" in i.value for i in at.info)
+
+
+# ---- realized tab + trade history -----------------------------------------
+
+def test_realized_tab_shows_total_realized_pnl():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[_buy(), _sell()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "error": "skip"}):
+        at.run()
+
+    # Only the Realized tab produces a $120.00 figure (positions totals are $0 here).
+    assert any("120.00" in m.value for m in at.metric)
+
+
+def test_trade_history_delete_removes_transaction():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[_buy(), _sell()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "error": "skip"}), \
+         patch("db.delete_transaction", return_value={"data": []}) as dele:
+        at.run()
+        _by_key(at.button, "del_t2").click().run()
+
+    dele.assert_called_once()
+    assert dele.call_args.args[1] == "t2"
+
+
+def test_realized_tab_empty_state_when_no_trades():
+    at = _authed(AppTest.from_file(APP))
+
+    with patch("db.list_transactions", return_value=[]):
+        at.run()
+
+    assert not at.exception
+    assert any("No trades yet" in i.value for i in at.info)

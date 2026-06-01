@@ -249,6 +249,43 @@ def render_positions(sb):
             st.dataframe(pd.DataFrame(p["batches"]), hide_index=True, use_container_width=True)
 
 
+def render_realized(sb):
+    txns = db.list_transactions(sb)
+    if not txns:
+        st.info("No trades yet. Add transactions on the Positions tab.")
+        return
+
+    realized = portfolio.realized_pnl(txns)
+
+    st.subheader("Realized gains")
+    st.metric("Total realized P&L", f"${realized['total']:,.2f}")
+    if realized["sales"]:
+        sales = pd.DataFrame(realized["sales"])[
+            ["traded_at", "ticker", "quantity", "price_per_share",
+             "cost_basis", "proceeds", "realized"]
+        ]
+        st.dataframe(sales, hide_index=True, use_container_width=True)
+    else:
+        st.caption("No closed lots yet — realized P&L appears once you record a sell.")
+
+    st.subheader("Trade history")
+    history = sorted(
+        txns,
+        key=lambda t: (str(t.get("traded_at", "")), str(t.get("created_at", ""))),
+        reverse=True,
+    )
+    for t in history:
+        c = st.columns([2, 2, 1, 2, 2, 1])
+        c[0].write(str(t.get("traded_at", "—")))
+        c[1].write(t["ticker"])
+        c[2].write(t["side"])
+        c[3].write(f"{float(t['quantity']):g}")
+        c[4].write(f"${float(t['price_per_share']):,.2f}")
+        if c[5].button("🗑", key=f"del_{t['id']}"):
+            db.delete_transaction(sb, t["id"])
+            st.rerun()
+
+
 def render_chat():
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -282,7 +319,7 @@ with tab_positions:
     render_positions(SB)
 
 with tab_realized:
-    st.info("Realized gains & trade history — added in the next step.")
+    render_realized(SB)
 
 with tab_chat:
     render_chat()
