@@ -16,6 +16,9 @@ import ta.volatility
 import yfinance as yf
 from dotenv import load_dotenv
 
+import db
+import portfolio
+
 load_dotenv(override=True)  # .env is the source of truth, even over stale shell vars
 
 fh = finnhub.Client(api_key=os.getenv("FINNHUB_API_KEY"))
@@ -215,3 +218,48 @@ def get_market_news(ticker: str, days_back: int = 7) -> dict:
         }
     except Exception as e:
         return {"ticker": ticker, "error": str(e)}
+
+
+def get_portfolio(user_id: str = None) -> dict:
+    """The signed-in user's holdings, enriched with live price and unrealized P&L.
+
+    Not memoized (per-user, position-dependent). ``user_id`` is injected by the
+    agent loop at dispatch — never exposed in the tool schema — so the model cannot
+    request another user's book. Returns error-as-data on an empty/unreadable book.
+    """
+    if not user_id:
+        return {"error": "No user context — cannot read portfolio."}
+
+    txns = db.list_transactions_for(user_id)
+    positions = portfolio.aggregate_positions(txns)
+    if not positions:
+        return {"error": "Your portfolio is empty — no open positions."}
+
+    enriched = []
+    total_value = 0.0
+    total_cost_priced = 0.0
+    for p in positions:
+        data = get_stock_data(p["ticker"], include_fundamentals=False)
+        price = data.get("price") if isinstance(data, dict) and "error" not in data else None
+        market_value = round(price * p["quantity"], 2) if price is not None else None
+        unrealized = round(market_value - p["cost_basis"], 2) if market_value is not None else None
+        if market_value is not None:
+            total_value += market_value
+            total_cost_priced += p["cost_basis"]
+        enriched.append({
+            "ticker": p["ticker"],
+            "quantity": p["quantity"],
+            "avg_cost": p["avg_cost"],
+            "cost_basis": p["cost_basis"],
+            "price": price,
+            "market_value": market_value,
+            "unrealized_pnl": unrealized,
+        })
+
+    return {
+        "positions": enriched,
+        "total_market_value": round(total_value, 2),
+        "total_cost_basis": round(total_cost_priced, 2),
+        "total_unrealized_pnl": round(total_value - total_cost_priced, 2),
+        "realized_pnl_total": portfolio.realized_pnl(txns)["total"],
+    }

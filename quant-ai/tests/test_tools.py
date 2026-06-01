@@ -9,6 +9,7 @@ from tools import (
     analyze_technicals,
     get_market_news,
     get_options_chain,
+    get_portfolio,
     get_stock_data,
 )
 
@@ -293,3 +294,47 @@ def test_get_market_news_returns_error_dict_on_exception():
 
     assert result["ticker"] == "AAPL"
     assert "api down" in result["error"]
+
+
+# ---- get_portfolio --------------------------------------------------------
+
+def _buy_row(ticker="NVDA", qty=10, price=100.0):
+    return {
+        "id": "t1", "ticker": ticker, "side": "buy",
+        "quantity": qty, "price_per_share": price, "traded_at": "2026-01-01",
+    }
+
+
+def test_get_portfolio_requires_user_id():
+    assert "error" in get_portfolio(None)
+
+
+def test_get_portfolio_empty_book_returns_error_as_data():
+    with patch("db.list_transactions_for", return_value=[]):
+        result = get_portfolio("u1")
+    assert "error" in result
+
+
+def test_get_portfolio_enriches_positions_with_live_price():
+    with patch("db.list_transactions_for", return_value=[_buy_row()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "price": 120.0}):
+        result = get_portfolio("u1")
+
+    [pos] = result["positions"]
+    assert pos["ticker"] == "NVDA"
+    assert pos["price"] == 120.0
+    assert pos["market_value"] == 1200.0
+    assert pos["unrealized_pnl"] == 200.0
+    assert result["total_market_value"] == 1200.0
+    assert result["total_unrealized_pnl"] == 200.0
+
+
+def test_get_portfolio_handles_price_failure_gracefully():
+    with patch("db.list_transactions_for", return_value=[_buy_row()]), \
+         patch("tools.get_stock_data", return_value={"ticker": "NVDA", "error": "rate limited"}):
+        result = get_portfolio("u1")
+
+    [pos] = result["positions"]
+    assert pos["price"] is None
+    assert pos["market_value"] is None
+    assert result["total_market_value"] == 0.0

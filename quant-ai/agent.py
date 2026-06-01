@@ -13,6 +13,7 @@ from tools import (
     analyze_technicals,
     get_market_news,
     get_options_chain,
+    get_portfolio,
     get_stock_data,
 )
 
@@ -35,6 +36,7 @@ You have access to real-time market data tools. Follow these rules on every resp
 4. For options trades, always include: strategy name, specific strike(s), expiration date, estimated debit or credit, and maximum possible loss.
 5. For earnings plays, always mention IV rank/percentile and IV crush risk.
 6. Cite which data you fetched and the timeframe (e.g. "Based on 6-month technicals as of today...").
+7. When the user asks about "my portfolio", "my positions", "my book", or how their holdings are doing, call get_portfolio FIRST to load their actual holdings (ticker, quantity, average cost, live price, unrealized P&L). Then reason about concentration, position sizing, and risk specific to what they actually hold — and give concrete trim/add/hold guidance with levels.
 
 Format your responses in clean markdown. Structure: lead with the key recommendation or verdict, then present the supporting data in organized sections. Use bold for key numbers."""
 
@@ -120,6 +122,15 @@ TOOLS = [
             "required": ["ticker"],
         },
     },
+    {
+        "name": "get_portfolio",
+        "description": "Fetch the current user's own saved portfolio: every open position with its ticker, quantity, average cost, current live price, market value, and unrealized P&L, plus total market value, total unrealized P&L, and total realized P&L. Takes no arguments — it always returns the signed-in user's holdings. Use this whenever the user asks about 'my portfolio', 'my positions', 'my book', or how their holdings are doing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 
 TOOL_MAP = {
@@ -127,14 +138,18 @@ TOOL_MAP = {
     "analyze_technicals": analyze_technicals,
     "get_options_chain": get_options_chain,
     "get_market_news": get_market_news,
+    "get_portfolio": get_portfolio,
 }
 
 
-def run_agent(user_message: str, history: list = []) -> tuple[str, list]:
+def run_agent(user_message: str, history: list = [], user_id: str = None) -> tuple[str, list]:
     """Run the tool-use loop until Claude returns a final answer.
 
     Returns the assistant's final markdown text and the full updated message
     list (so the caller can thread it back in as conversation history).
+
+    ``user_id`` is injected into get_portfolio at dispatch and is NOT part of any
+    tool schema, so the model can only ever read the signed-in user's own book.
     """
     messages = history + [{"role": "user", "content": user_message}]
 
@@ -152,7 +167,11 @@ def run_agent(user_message: str, history: list = []) -> tuple[str, list]:
             for block in resp.content:
                 if block.type == "tool_use":
                     try:
-                        result = TOOL_MAP[block.name](**block.input)
+                        if block.name == "get_portfolio":
+                            # User scoping is injected here, never taken from model input.
+                            result = TOOL_MAP[block.name](user_id=user_id)
+                        else:
+                            result = TOOL_MAP[block.name](**block.input)
                     except Exception as e:
                         result = {"error": str(e)}
                     tool_results.append({

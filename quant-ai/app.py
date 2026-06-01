@@ -303,7 +303,7 @@ def render_chat():
             try:
                 with st.spinner("Fetching market data & analyzing..."):
                     response_text, st.session_state.history = run_agent(
-                        pending, st.session_state.history
+                        pending, st.session_state.history, st.session_state.user_id
                     )
                 st.markdown(response_text)
                 st.session_state.messages.append(

@@ -86,17 +86,23 @@ def test_system_prompt_and_tools_defined():
     assert agent.TOOL_MAP["get_stock_data"] is not None
 
 
-def test_all_four_tools_registered_with_ticker_required():
-    names = [t["name"] for t in agent.TOOLS]
-    assert names == [
-        "get_stock_data",
-        "analyze_technicals",
-        "get_options_chain",
-        "get_market_news",
-    ]
-    for t in agent.TOOLS:
-        assert "ticker" in t["input_schema"]["properties"]
-        assert t["input_schema"]["required"] == ["ticker"]
+def test_data_tools_require_ticker():
+    by_name = {t["name"]: t for t in agent.TOOLS}
+    for name in ("get_stock_data", "analyze_technicals", "get_options_chain", "get_market_news"):
+        schema = by_name[name]["input_schema"]
+        assert "ticker" in schema["properties"]
+        assert schema["required"] == ["ticker"]
+
+
+def test_get_portfolio_registered_without_ticker():
+    by_name = {t["name"]: t for t in agent.TOOLS}
+    assert "get_portfolio" in by_name
+    schema = by_name["get_portfolio"]["input_schema"]
+    # The user identifier is injected at dispatch, never exposed to the model.
+    assert "ticker" not in schema["properties"]
+    assert "user_id" not in schema["properties"]
+    assert schema["required"] == []
+    assert agent.TOOL_MAP["get_portfolio"] is not None
 
 
 def test_tool_schemas_expose_their_distinct_parameters():
@@ -107,11 +113,12 @@ def test_tool_schemas_expose_their_distinct_parameters():
     assert "days_back" in by_name["get_market_news"]["input_schema"]["properties"]
 
 
-def test_tool_map_binds_all_four_functions():
+def test_tool_map_binds_all_functions():
     from tools import (
         analyze_technicals,
         get_market_news,
         get_options_chain,
+        get_portfolio,
         get_stock_data,
     )
 
@@ -120,7 +127,21 @@ def test_tool_map_binds_all_four_functions():
         "analyze_technicals": analyze_technicals,
         "get_options_chain": get_options_chain,
         "get_market_news": get_market_news,
+        "get_portfolio": get_portfolio,
     }
+
+
+def test_get_portfolio_dispatch_injects_user_id_and_ignores_model_input():
+    # The model tries to pass a forged user_id; the loop must override it.
+    first = _resp("tool_use", [_tool_use_block("get_portfolio", {"user_id": "ATTACKER"})])
+    second = _resp("end_turn", [_text_block("Your book is concentrated in NVDA.")])
+    spy = MagicMock(return_value={"positions": []})
+
+    with patch("agent.client.messages.create", side_effect=[first, second]), \
+         patch.dict("agent.TOOL_MAP", {"get_portfolio": spy}):
+        run_agent("How is my portfolio?", user_id="real-user-123")
+
+    spy.assert_called_once_with(user_id="real-user-123")
 
 
 def test_run_agent_does_not_mutate_default_history():

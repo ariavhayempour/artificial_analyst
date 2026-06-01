@@ -29,6 +29,38 @@ def get_client() -> Client:
     return create_client(url, key)
 
 
+def get_service_client() -> Client:
+    """Build a service-role client (bypasses RLS). Server-side ONLY — never expose
+    this to a browser. Used to read a specific user's data by an injected, trusted
+    user_id (e.g. the agent's get_portfolio tool)."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        raise RuntimeError(
+            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for service operations."
+        )
+    return create_client(url, key)
+
+
+def list_transactions_for(user_id: str) -> list:
+    """Service-role read of one user's transactions, oldest first. ``[]`` on failure.
+
+    RLS is bypassed, so the caller MUST pass a trusted user_id (never one derived
+    from model/tool input)."""
+    try:
+        resp = (
+            get_service_client()
+            .table("transactions")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("traded_at")
+            .execute()
+        )
+        return resp.data or []
+    except Exception:
+        return []
+
+
 _NOT_AUTHORIZED = (
     "This email is not authorized to sign up. "
     "Ask an admin to add you to the allowlist."
