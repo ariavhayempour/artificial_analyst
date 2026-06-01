@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Table,
   TableBody,
@@ -19,7 +21,15 @@ function pnlClass(n: number | null): string {
   return n >= 0 ? "text-emerald-400" : "text-red-400";
 }
 
-export function HoldingsTable({ rows, totals }: { rows: HoldingRow[]; totals: Totals }) {
+export function HoldingsTable({
+  rows,
+  totals,
+  onAnalyze,
+}: {
+  rows: HoldingRow[];
+  totals: Totals;
+  onAnalyze?: (ticker: string) => void;
+}) {
   if (rows.length === 0) {
     return (
       <p className="text-slate-400">
@@ -51,6 +61,7 @@ export function HoldingsTable({ rows, totals }: { rows: HoldingRow[]; totals: To
             <TableHead className="text-right">Unreal $</TableHead>
             <TableHead className="text-right">Unreal %</TableHead>
             <TableHead className="text-right">Weight</TableHead>
+            {onAnalyze && <TableHead />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -78,6 +89,18 @@ export function HoldingsTable({ rows, totals }: { rows: HoldingRow[]; totals: To
               <TableCell className="text-right">
                 {r.weightPct === null ? "—" : `${r.weightPct}%`}
               </TableCell>
+              {onAnalyze && (
+                <TableCell className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => onAnalyze(r.ticker)}
+                    className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 transition hover:bg-slate-800"
+                    aria-label={`Analyze ${r.ticker}`}
+                  >
+                    🔍 Analyze
+                  </button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>
