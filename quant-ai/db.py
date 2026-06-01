@@ -85,3 +85,68 @@ def sign_out(client) -> None:
         client.auth.sign_out()
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Transactions CRUD. All run under the signed-in user's JWT; the table's
+# user_id default (auth.uid()) + RLS keep each user scoped to their own rows.
+# ---------------------------------------------------------------------------
+
+def add_transaction(
+    client,
+    ticker: str,
+    side: str,
+    quantity,
+    price_per_share,
+    traded_at: str = None,
+) -> dict:
+    """Insert a buy/sell. Validates inputs client-side, then relies on RLS + DB
+    checks. Returns ``{"data": [...]}`` or ``{"error": ...}`` (error-as-data)."""
+    side = (side or "").lower()
+    if side not in ("buy", "sell"):
+        return {"error": "side must be 'buy' or 'sell'"}
+    if not (ticker or "").strip():
+        return {"error": "ticker is required"}
+    try:
+        quantity = float(quantity)
+        price_per_share = float(price_per_share)
+    except (TypeError, ValueError):
+        return {"error": "quantity and price must be numbers"}
+    if quantity <= 0:
+        return {"error": "quantity must be greater than 0"}
+    if price_per_share < 0:
+        return {"error": "price must be 0 or greater"}
+
+    row = {
+        "ticker": ticker.upper().strip(),
+        "side": side,
+        "quantity": quantity,
+        "price_per_share": price_per_share,
+    }
+    if traded_at:
+        row["traded_at"] = traded_at
+    try:
+        resp = client.table("transactions").insert(row).execute()
+        return {"data": resp.data}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def list_transactions(client) -> list:
+    """All of the signed-in user's transactions, oldest first. ``[]`` on failure."""
+    try:
+        resp = client.table("transactions").select("*").order("traded_at").execute()
+        return resp.data or []
+    except Exception:
+        return []
+
+
+def delete_transaction(client, transaction_id: str) -> dict:
+    """Delete one of the user's transactions by id. Error-as-data on failure."""
+    try:
+        resp = (
+            client.table("transactions").delete().eq("id", transaction_id).execute()
+        )
+        return {"data": resp.data}
+    except Exception as e:
+        return {"error": str(e)}
