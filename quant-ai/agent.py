@@ -9,7 +9,12 @@ import os  # noqa: F401  (kept for parity with tools setup / future use)
 import anthropic
 from dotenv import load_dotenv
 
-from tools import get_stock_data
+from tools import (
+    analyze_technicals,
+    get_market_news,
+    get_options_chain,
+    get_stock_data,
+)
 
 load_dotenv()
 
@@ -56,10 +61,72 @@ TOOLS = [
             "required": ["ticker"],
         },
     },
+    {
+        "name": "analyze_technicals",
+        "description": "Calculate technical indicators for a stock using 6 months of daily price data. Returns any combination of: RSI-14 with overbought/oversold signal, MACD with signal line, histogram, and crossover direction, Bollinger Bands (20,2) with percent-B position, SMA 20/50/200 with golden cross and above/below 200 SMA flags, and support/resistance levels from the last 60 sessions.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": "Stock ticker symbol in uppercase",
+                },
+                "indicators": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of indicators to compute. Valid values: rsi | macd | bollinger | sma | support_resistance. Omit to get all five.",
+                },
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
+        "name": "get_options_chain",
+        "description": "Retrieve the options chain for a stock. Returns calls and puts filtered to strikes within a percentage range of the current price. Each contract includes strike price, last price, bid, ask, volume, open interest, and implied volatility. Also returns available expiration dates.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": "Stock ticker symbol in uppercase",
+                },
+                "expiration": {
+                    "type": "string",
+                    "description": "Options expiration date in YYYY-MM-DD format, or 'next' to use the nearest available expiry. Default 'next'.",
+                },
+                "strike_range_pct": {
+                    "type": "number",
+                    "description": "Only return strikes within this percentage of the current price. E.g. 0.10 returns strikes within ±10%. Default 0.10.",
+                },
+            },
+            "required": ["ticker"],
+        },
+    },
+    {
+        "name": "get_market_news",
+        "description": "Fetch recent news, sentiment analysis, and analyst activity for a stock. Returns an overall sentiment score, bullish and bearish percentage breakdown, and up to 8 recent news headlines with source and timestamp. Data is sourced from Finnhub.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker": {
+                    "type": "string",
+                    "description": "Stock ticker symbol in uppercase",
+                },
+                "days_back": {
+                    "type": "integer",
+                    "description": "Number of calendar days of news to retrieve. Default 7.",
+                },
+            },
+            "required": ["ticker"],
+        },
+    },
 ]
 
 TOOL_MAP = {
     "get_stock_data": get_stock_data,
+    "analyze_technicals": analyze_technicals,
+    "get_options_chain": get_options_chain,
+    "get_market_news": get_market_news,
 }
 
 

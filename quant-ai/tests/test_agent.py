@@ -86,6 +86,43 @@ def test_system_prompt_and_tools_defined():
     assert agent.TOOL_MAP["get_stock_data"] is not None
 
 
+def test_all_four_tools_registered_with_ticker_required():
+    names = [t["name"] for t in agent.TOOLS]
+    assert names == [
+        "get_stock_data",
+        "analyze_technicals",
+        "get_options_chain",
+        "get_market_news",
+    ]
+    for t in agent.TOOLS:
+        assert "ticker" in t["input_schema"]["properties"]
+        assert t["input_schema"]["required"] == ["ticker"]
+
+
+def test_tool_schemas_expose_their_distinct_parameters():
+    by_name = {t["name"]: t for t in agent.TOOLS}
+    assert "indicators" in by_name["analyze_technicals"]["input_schema"]["properties"]
+    assert "expiration" in by_name["get_options_chain"]["input_schema"]["properties"]
+    assert "strike_range_pct" in by_name["get_options_chain"]["input_schema"]["properties"]
+    assert "days_back" in by_name["get_market_news"]["input_schema"]["properties"]
+
+
+def test_tool_map_binds_all_four_functions():
+    from tools import (
+        analyze_technicals,
+        get_market_news,
+        get_options_chain,
+        get_stock_data,
+    )
+
+    assert agent.TOOL_MAP == {
+        "get_stock_data": get_stock_data,
+        "analyze_technicals": analyze_technicals,
+        "get_options_chain": get_options_chain,
+        "get_market_news": get_market_news,
+    }
+
+
 def test_run_agent_does_not_mutate_default_history():
     fake = _resp("end_turn", [_text_block("ok")])
 
