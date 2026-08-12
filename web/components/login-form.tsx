@@ -8,6 +8,7 @@ const EMPTY: AuthState = {};
 
 export function LoginForm() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [showPassword, setShowPassword] = useState(false);
   const [signInState, signIn, signingIn] = useActionState(signInAction, EMPTY);
   const [signUpState, signUp, signingUp] = useActionState(signUpAction, EMPTY);
 
@@ -63,12 +64,20 @@ export function LoginForm() {
           <input
             id="password"
             name="password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             autoComplete={isSignin ? "current-password" : "new-password"}
             placeholder="••••••••"
             className="input-term"
             required
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="self-start text-ink-faint hover:text-ink transition-colors text-xs"
+            aria-label={showPassword ? "Hide password" : "Show password"}
+          >
+            {showPassword ? "hide password" : "show password"}
+          </button>
         </label>
 
         {!isSignin && (
