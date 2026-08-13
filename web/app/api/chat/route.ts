@@ -1,6 +1,6 @@
-import { anthropic } from "@ai-sdk/anthropic";
 import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
 
+import { getAgentModel } from "@/lib/agent/model";
 import { buildTools } from "@/lib/agent/tools";
 import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 import { polygon } from "@/lib/market/polygon";
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   });
 
   const result = streamText({
-    model: anthropic("claude-opus-4-8"),
+    model: getAgentModel(),
     system: SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
     tools,
